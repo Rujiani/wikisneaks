@@ -1,0 +1,10 @@
+{
+  "name": "wikisneaks",
+  "private": true,
+  "workspaces": ["server", "web"],
+  "scripts": {
+    "dev:api": "npm run dev -w server",
+    "dev:web": "npm run dev -w web",
+    "dev": "npm run dev:api & npm run dev:web"
+  }
+}
