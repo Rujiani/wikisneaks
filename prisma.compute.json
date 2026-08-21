@@ -3,7 +3,7 @@
   "app": {
     "name": "wikiSneaks",
     "root": "server",
-    "framework": "bun",
+    "framework": "node",
     "entry": "src/index.ts",
     "httpPort": 3000,
     "build": {

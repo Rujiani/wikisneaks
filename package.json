@@ -1,10 +1,17 @@
 {
   "name": "wikisneaks",
   "private": true,
-  "workspaces": ["server", "web"],
+  "workspaces": [
+    "server",
+    "web"
+  ],
   "scripts": {
     "dev:api": "npm run dev -w server",
     "dev:web": "npm run dev -w web",
     "dev": "npm run dev:api & npm run dev:web"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "prisma": "^7.9.1"
   }
 }
