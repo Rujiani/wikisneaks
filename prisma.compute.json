@@ -4,11 +4,11 @@
     "name": "wikiSneaks",
     "root": "server",
     "framework": "custom",
-    "entry": "src/index.ts",
     "httpPort": 3000,
     "build": {
       "command": "npm run build",
-      "outputDirectory": "."
+      "outputDirectory": "dist",
+      "entrypoint": "index.js"
     }
   }
 }
