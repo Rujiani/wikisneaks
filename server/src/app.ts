@@ -12,7 +12,9 @@ const buildApp = (): Express => {
   app.use(cookieParser());
 
   const environment = process.env.NODE_ENV || 'development';
-  app.use(environment === 'development' ? morgan('dev') : morgan('tiny'));
+  if (environment !== 'test') {
+    app.use(environment === 'development' ? morgan('dev') : morgan('tiny'));
+  }
 
   app.get("/health", (req: Request, res: Response) => {
     res.send("app is running perfectly");
