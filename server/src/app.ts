@@ -1,9 +1,14 @@
-import express, { type Express, type Request, type Response, type NextFunction } from 'express';
+import express, {
+  type Express,
+  type Request,
+  type Response,
+  type NextFunction,
+} from 'express';
 import router from './routes/index.js';
 import { ZodError } from 'zod';
 import { isHttpError } from 'http-errors';
 import cookieParser from 'cookie-parser';
-import morgan from 'morgan'
+import morgan from 'morgan';
 
 const buildApp = (): Express => {
   const app = express();
@@ -16,15 +21,17 @@ const buildApp = (): Express => {
     app.use(environment === 'development' ? morgan('dev') : morgan('tiny'));
   }
 
-  app.get("/health", (req: Request, res: Response) => {
-    res.send("app is running perfectly");
+  app.get('/health', (req: Request, res: Response) => {
+    res.send('app is running perfectly');
   });
 
   app.use('/api', router);
 
   app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
     if (err instanceof ZodError) {
-      return res.status(400).json({ message: "Validation error", issues: err.issues });
+      return res
+        .status(400)
+        .json({ message: 'Validation error', issues: err.issues });
     }
 
     if (isHttpError(err)) {
@@ -32,7 +39,7 @@ const buildApp = (): Express => {
     }
 
     console.error(err);
-    return res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: 'Internal server error' });
   });
 
   return app;

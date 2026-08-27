@@ -1,5 +1,10 @@
 import express from 'express';
-import {deleteUser, getUsersList, getUser, updateUser} from '../controllers/user.controller.js'
+import {
+  deleteUser,
+  getUsersList,
+  getUser,
+  updateUser,
+} from '../controllers/user.controller.js';
 import { asyncHandler } from '../utils/async.handler.js';
 
 const userRouter = express.Router();
