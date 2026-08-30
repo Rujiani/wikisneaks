@@ -4,6 +4,18 @@ import createHttpError from 'http-errors';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
 import { hashEmail, hashEmailAllVersions } from '../utils/hash.email.js';
 
+/**
+ * Register a user: store argon2 password hash and HMAC email fingerprint.
+ *
+ * Email must already be normalized (trim + lowercase). Uniqueness is checked
+ * against hashes under every live pepper, then the row is written with the
+ * current pepper version.
+ *
+ * @param login - Unique login.
+ * @param email - Normalized email (not stored in plaintext).
+ * @param password - Plaintext password (hashed with argon2id before insert).
+ * @throws HttpError 409 if login or email fingerprint already exists.
+ */
 const register = async (login: string, email: string, password: string) => {
   const candidates = hashEmailAllVersions(email);
   const existing = await userRepo.findByAnyEmailHash(
@@ -33,8 +45,17 @@ const register = async (login: string, email: string, password: string) => {
 };
 
 /**
- * After a pepper rotation: user re-submits email → verify against any live pepper,
- * then rewrite hash under the current version (and mark email verified).
+ * Re-bind an account email after a pepper rotation.
+ *
+ * The user re-submits plaintext email; we match it against any live pepper
+ * hash, then rewrite `email_hash` / `email_pepper_version` under the current
+ * pepper. Also sets `is_email_verified` (legacy side effect — not the same as
+ * SMTP verification).
+ *
+ * @param userId - Account to upgrade.
+ * @param email - Normalized email claimed by the user.
+ * @returns Updated id and pepper version.
+ * @throws HttpError 404 if the user is missing; 400 if email does not match.
  */
 const reconfirmEmail = async (userId: number, email: string) => {
   const user = await userRepo.findById(userId);

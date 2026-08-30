@@ -7,6 +7,7 @@ type CreateUserData = {
   passwordHash: string;
 };
 
+/** Fields safe to return from the API (no password or email fingerprint). */
 const USER_PUBLIC_SELECT = {
   id: true,
   login: true,
@@ -31,6 +32,10 @@ const addUser = async (data: CreateUserData) => {
   });
 };
 
+/**
+ * Find a user whose `email_hash` matches any of the candidate digests
+ * (typically one digest per live pepper version).
+ */
 const findByAnyEmailHash = async (emailHashes: string[]) => {
   if (emailHashes.length === 0) return null;
 
@@ -40,6 +45,10 @@ const findByAnyEmailHash = async (emailHashes: string[]) => {
   });
 };
 
+/**
+ * Rewrite email fingerprint under a new pepper version.
+ * Also sets `isEmailVerified` (see auth.service `reconfirmEmail` docs).
+ */
 const upgradeEmailHash = async (
   id: number,
   emailHash: string,
