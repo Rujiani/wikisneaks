@@ -10,10 +10,9 @@ const registerBodySchema = z.object({
       message:
         'Login may only contain Latin letters, digits, hyphens, and underscores, and must start with a letter',
     }),
-  email: z.string().trim().toLowerCase().max(254).pipe(z.email()),
   password: z
     .string()
-    .min(8, { message: 'Password must be at least 8 characters long' })
+    .min(12, { message: 'Password must be at least 12 characters long' })
     .regex(/[a-z]/, {
       message: 'Password must contain at least one lowercase letter',
     })

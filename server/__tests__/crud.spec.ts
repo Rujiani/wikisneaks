@@ -6,11 +6,9 @@ import {
   app,
   buildRegisterBody,
   expectPublicUser,
-  expectStoredEmailHash,
   findUserByLogin,
   registerUser,
 } from './helpers.js';
-import { getCurrentPepperVersion, hashEmail } from '../src/utils/hash.email.js';
 
 function assertTestDatabase(): void {
   const url = process.env.DATABASE_URL ?? '';
@@ -44,35 +42,15 @@ describe('User CRUD', () => {
       expect(user.id).toBe(1);
     });
 
-    it('stores a hash of the email, not the plaintext', async () => {
+    it('stores no email fingerprint at registration', async () => {
       const payload = await registerUser();
       const stored = await db.user.findUnique({
         where: { login: payload.login },
       });
 
-      expectStoredEmailHash(stored?.emailHash, payload.email);
-      expect(stored?.emailPepperVersion).toBe(getCurrentPepperVersion());
-    });
-
-    it('rejects an email already hashed under an older pepper version', async () => {
-      const payload = buildRegisterBody();
-      const legacy = hashEmail(payload.email, 1);
-
-      await db.user.create({
-        data: {
-          login: `${payload.login}_legacy`,
-          emailHash: legacy.hash,
-          emailPepperVersion: 1,
-          passwordHash: 'not-a-real-hash',
-        },
-      });
-
-      const res = await request(app).post('/api/auth/register').send(payload);
-
-      expect(res.status).toBe(409);
-      expect(res.body).toEqual({
-        message: 'Email or login is already registered',
-      });
+      expect(stored?.emailHash).toBeNull();
+      expect(stored?.emailPepperVersion).toBeNull();
+      expect(stored?.isEmailVerified).toBe(false);
     });
 
     it('does not expose the password hash', async () => {
@@ -90,7 +68,6 @@ describe('User CRUD', () => {
     it('returns 400 when the body is invalid', async () => {
       const res = await request(app).post('/api/auth/register').send({
         login: 'ab',
-        email: 'not-an-email',
         password: 'short',
       });
 
@@ -99,16 +76,18 @@ describe('User CRUD', () => {
       expect(res.body.issues).toEqual(expect.any(Array));
     });
 
-    it('returns 409 when email is already registered', async () => {
-      const payload = await registerUser();
+    it('ignores email if sent in the body', async () => {
+      const payload = buildRegisterBody();
       const res = await request(app)
         .post('/api/auth/register')
-        .send(buildRegisterBody({ email: payload.email }));
+        .send({ ...payload, email: 'ignored@example.test' });
 
-      expect(res.status).toBe(409);
-      expect(res.body).toEqual({
-        message: 'Email or login is already registered',
+      expect(res.status).toBe(201);
+
+      const stored = await db.user.findUnique({
+        where: { login: payload.login },
       });
+      expect(stored?.emailHash).toBeNull();
     });
 
     it('returns 409 when login is already registered', async () => {
@@ -119,7 +98,7 @@ describe('User CRUD', () => {
 
       expect(res.status).toBe(409);
       expect(res.body).toEqual({
-        message: 'Email or login is already registered',
+        message: 'Login is already registered',
       });
     });
   });

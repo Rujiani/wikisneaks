@@ -4,7 +4,8 @@ import { createHmac } from 'node:crypto';
  * Email hashing with versioned HMAC peppers.
  *
  * Plaintext emails are never stored. Callers must pass a normalized address
- * (trim + lowercase) — Zod schemas do this on HTTP boundaries.
+ * (trim + lowercase). Registration does **not** use these helpers yet — email
+ * binding is optional and wired later.
  *
  * Env:
  * - `EMAIL_HASH_PEPPERS` — JSON object `{ "1": "secret", "2": "…" }`

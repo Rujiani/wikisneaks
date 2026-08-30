@@ -4,15 +4,14 @@ import { expect } from 'vitest';
 import type { Express } from 'express';
 
 import buildApp from '../src/app.js';
-import { hashEmail, getCurrentPepperVersion } from '../src/utils/hash.email.js';
 
 export const app: Express = buildApp();
 
-export const VALID_PASSWORD = 'Password1!';
+/** Meets policy: 12+ chars, upper, lower, digit, special. */
+export const VALID_PASSWORD = 'Password1!ab';
 
 type RegisterBody = {
   login: string;
-  email: string;
   password: string;
 };
 
@@ -22,7 +21,6 @@ export function buildRegisterBody(
   const suffix = faker.string.alphanumeric({ length: 10, casing: 'lower' });
   return {
     login: `user${suffix}`,
-    email: `${suffix}@example.test`,
     password: VALID_PASSWORD,
     ...overrides,
   };
@@ -84,14 +82,4 @@ export function expectPublicUser(
   expect(user).not.toHaveProperty('email_hash');
   expect(user).not.toHaveProperty('passwordHash');
   expect(user).not.toHaveProperty('password_hash');
-}
-
-export function expectStoredEmailHash(
-  storedHash: string | null | undefined,
-  email: string,
-  pepperVersion?: number,
-) {
-  const expected = hashEmail(email, pepperVersion ?? getCurrentPepperVersion());
-  expect(storedHash).toBe(expected.hash);
-  expect(storedHash).not.toBe(email);
 }

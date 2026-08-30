@@ -2,9 +2,9 @@ import { db } from '../prisma/db.js';
 
 type CreateUserData = {
   login: string;
-  emailHash: string;
-  emailPepperVersion: number;
   passwordHash: string;
+  emailHash?: string | null;
+  emailPepperVersion?: number | null;
 };
 
 /** Fields safe to return from the API (no password or email fingerprint). */

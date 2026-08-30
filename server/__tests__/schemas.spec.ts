@@ -47,8 +47,7 @@ describe('UserParamsSchema', () => {
 
 const validRegisterBody = {
     login: 'validuser',
-    email: 'user@example.com',
-    password: 'Password1!',
+    password: 'Password1!ab',
 }
 
 describe('RegisterBodySchema', () => {
@@ -56,7 +55,19 @@ describe('RegisterBodySchema', () => {
         expectSuccess(registerBodySchema, validRegisterBody, validRegisterBody)
     })
 
-    it.each(['login', 'email', 'password'] as const)('rejects a missing %s', (field) => {
+    it('strips unknown fields such as email', () => {
+        const result = registerBodySchema.safeParse({
+            ...validRegisterBody,
+            email: 'user@example.com',
+        })
+        expect(result.success).toBe(true)
+        if (result.success) {
+            expect(result.data).toEqual(validRegisterBody)
+            expect(result.data).not.toHaveProperty('email')
+        }
+    })
+
+    it.each(['login', 'password'] as const)('rejects a missing %s', (field) => {
         const { [field]: _, ...rest } = validRegisterBody
         expectFailure(registerBodySchema, rest, [field], 'invalid_type')
     })
@@ -98,55 +109,34 @@ describe('RegisterBodySchema', () => {
         })
     })
 
-    describe('email', () => {
-        it('lowercases and trims email', () => {
-            expectSuccess(
-                registerBodySchema,
-                { ...validRegisterBody, email: '  User@Example.COM  ' },
-                { ...validRegisterBody, email: 'user@example.com' },
-            )
-        })
-
-        it('rejects an invalid email', () => {
-            expectFailure(
-                registerBodySchema,
-                { ...validRegisterBody, email: 'not-an-email' },
-                ['email'],
-                'invalid_format',
-            )
-        })
-
-        it('rejects an email longer than 254 characters', () => {
-            const email = `${'a'.repeat(243)}@example.com`
-            expectFailure(registerBodySchema, { ...validRegisterBody, email }, ['email'], 'too_big')
-        })
-    })
-
     describe('password', () => {
-        it('accepts an 8-character password that meets all rules', () => {
+        it('accepts a 12-character password that meets all rules', () => {
             expectSuccess(
                 registerBodySchema,
-                { ...validRegisterBody, password: 'Passw0r!' },
-                { ...validRegisterBody, password: 'Passw0r!' },
+                { ...validRegisterBody, password: 'Passw0rd!xyz' },
+                { ...validRegisterBody, password: 'Passw0rd!xyz' },
             )
         })
 
         it.each([
-            ['Pass1!', 'too_small'],
-            ['PASSWORD1!', 'invalid_format'],
-            ['password1!', 'invalid_format'],
-            ['Password!', 'invalid_format'],
-            ['Password1', 'invalid_format'],
+            ['Passw0r!ab', 'too_small'], // 11 chars
+            ['PASSWORD1!AB', 'invalid_format'], // no lowercase
+            ['password1!ab', 'invalid_format'],
+            ['Password!!ab', 'invalid_format'],
+            ['Password12ab', 'invalid_format'],
         ] as const)('rejects %s', (password, code) => {
             expectFailure(registerBodySchema, { ...validRegisterBody, password }, ['password'], code)
         })
 
         it('reports the password minimum length message', () => {
-            const result = registerBodySchema.safeParse({ ...validRegisterBody, password: 'Pass1!' })
+            const result = registerBodySchema.safeParse({
+                ...validRegisterBody,
+                password: 'Pass1!',
+            })
             expect(result.success).toBe(false)
             if (!result.success) {
                 expect(result.error.issues[0]?.message).toBe(
-                    'Password must be at least 8 characters long',
+                    'Password must be at least 12 characters long',
                 )
             }
         })
