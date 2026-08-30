@@ -6,9 +6,11 @@ import {
   app,
   buildRegisterBody,
   expectPublicUser,
-  findUserByEmail,
+  expectStoredEmailHash,
+  findUserByLogin,
   registerUser,
 } from './helpers.js';
+import { getCurrentPepperVersion, hashEmail } from '../src/utils/hash.email.js';
 
 function assertTestDatabase(): void {
   const url = process.env.DATABASE_URL ?? '';
@@ -36,17 +38,48 @@ describe('User CRUD', () => {
   describe('POST /api/auth/register', () => {
     it('creates a user and returns 201', async () => {
       const payload = await registerUser();
-      const user = await findUserByEmail(payload.email);
+      const user = await findUserByLogin(payload.login);
 
-      expectPublicUser(user, { login: payload.login, email: payload.email });
+      expectPublicUser(user, { login: payload.login });
       expect(user.id).toBe(1);
+    });
+
+    it('stores a hash of the email, not the plaintext', async () => {
+      const payload = await registerUser();
+      const stored = await db.user.findUnique({
+        where: { login: payload.login },
+      });
+
+      expectStoredEmailHash(stored?.emailHash, payload.email);
+      expect(stored?.emailPepperVersion).toBe(getCurrentPepperVersion());
+    });
+
+    it('rejects an email already hashed under an older pepper version', async () => {
+      const payload = buildRegisterBody();
+      const legacy = hashEmail(payload.email, 1);
+
+      await db.user.create({
+        data: {
+          login: `${payload.login}_legacy`,
+          emailHash: legacy.hash,
+          emailPepperVersion: 1,
+          passwordHash: 'not-a-real-hash',
+        },
+      });
+
+      const res = await request(app).post('/api/auth/register').send(payload);
+
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({
+        message: 'Email or login is already registered',
+      });
     });
 
     it('does not expose the password hash', async () => {
       const payload = await registerUser();
-      const user = await findUserByEmail(payload.email);
+      const user = await findUserByLogin(payload.login);
       const stored = await db.user.findUnique({
-        where: { email: payload.email },
+        where: { login: payload.login },
       });
 
       expect(stored?.passwordHash).toEqual(expect.any(String));
@@ -109,9 +142,8 @@ describe('User CRUD', () => {
       expect(res.body).toHaveLength(2);
       expectPublicUser(res.body[0], {
         login: second.login,
-        email: second.email,
       });
-      expectPublicUser(res.body[1], { login: first.login, email: first.email });
+      expectPublicUser(res.body[1], { login: first.login });
     });
 
     it('paginates with limit and offset', async () => {
@@ -126,15 +158,15 @@ describe('User CRUD', () => {
         .query({ limit: 2, offset: 0 });
       expect(page.status).toBe(200);
       expect(page.body).toHaveLength(2);
-      expect(page.body[0].email).toBe(users[2]?.email);
-      expect(page.body[1].email).toBe(users[1]?.email);
+      expect(page.body[0].login).toBe(users[2]?.login);
+      expect(page.body[1].login).toBe(users[1]?.login);
 
       const next = await request(app)
         .get('/api/users')
         .query({ limit: 2, offset: 2 });
       expect(next.status).toBe(200);
       expect(next.body).toHaveLength(1);
-      expect(next.body[0].email).toBe(users[0]?.email);
+      expect(next.body[0].login).toBe(users[0]?.login);
     });
 
     it('uses default limit and offset when query params are omitted', async () => {
@@ -158,14 +190,13 @@ describe('User CRUD', () => {
   describe('GET /api/users/:userId', () => {
     it('returns a single user', async () => {
       const payload = await registerUser();
-      const created = await findUserByEmail(payload.email);
+      const created = await findUserByLogin(payload.login);
 
       const res = await request(app).get(`/api/users/${created.id}`);
 
       expect(res.status).toBe(200);
       expectPublicUser(res.body.user, {
         login: payload.login,
-        email: payload.email,
       });
       expect(res.body.user.id).toBe(created.id);
     });
@@ -188,7 +219,7 @@ describe('User CRUD', () => {
   describe('PATCH /api/users/:userId', () => {
     it('updates extraInfo and returns the public user', async () => {
       const payload = await registerUser();
-      const created = await findUserByEmail(payload.email);
+      const created = await findUserByLogin(payload.login);
 
       const res = await request(app)
         .patch(`/api/users/${created.id}`)
@@ -197,14 +228,13 @@ describe('User CRUD', () => {
       expect(res.status).toBe(200);
       expectPublicUser(res.body.user, {
         login: payload.login,
-        email: payload.email,
         extraInfo: 'likes sneaker drops',
       });
     });
 
     it('ignores attempts to change fields other than extraInfo', async () => {
       const payload = await registerUser();
-      const created = await findUserByEmail(payload.email);
+      const created = await findUserByLogin(payload.login);
 
       const res = await request(app).patch(`/api/users/${created.id}`).send({
         extraInfo: 'bio',
@@ -217,7 +247,6 @@ describe('User CRUD', () => {
       expect(res.status).toBe(200);
       expectPublicUser(res.body.user, {
         login: payload.login,
-        email: payload.email,
         extraInfo: 'bio',
         role: 'USER',
         isBlocked: false,
@@ -235,7 +264,7 @@ describe('User CRUD', () => {
 
     it('returns 400 when extraInfo is missing or too long', async () => {
       const payload = await registerUser();
-      const created = await findUserByEmail(payload.email);
+      const created = await findUserByLogin(payload.login);
 
       const missing = await request(app)
         .patch(`/api/users/${created.id}`)
@@ -252,7 +281,7 @@ describe('User CRUD', () => {
   describe('DELETE /api/users/:userId', () => {
     it('deletes a user and returns 204', async () => {
       const payload = await registerUser();
-      const created = await findUserByEmail(payload.email);
+      const created = await findUserByLogin(payload.login);
 
       const res = await request(app).delete(`/api/users/${created.id}`);
 

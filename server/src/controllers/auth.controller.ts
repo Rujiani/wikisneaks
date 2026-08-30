@@ -6,15 +6,10 @@ import { registerBodySchema } from '../schemas/auth.schemas.js';
 const register = async (req: Request, res: Response) => {
   const body = await registerBodySchema.parseAsync(req.body);
 
-  const result = await authService.register(
-    body.login,
-    body.email,
-    body.password,
-  );
+  await authService.register(body.login, body.email, body.password);
 
   res.status(201).json({
     message: 'Registration successful',
-    email: result.email,
   });
 };
 

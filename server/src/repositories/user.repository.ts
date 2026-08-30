@@ -2,14 +2,14 @@ import { db } from '../prisma/db.js';
 
 type CreateUserData = {
   login: string;
-  email: string;
+  emailHash: string;
+  emailPepperVersion: number;
   passwordHash: string;
 };
 
 const USER_PUBLIC_SELECT = {
   id: true,
   login: true,
-  email: true,
   extraInfo: true,
   role: true,
   isBlocked: true,
@@ -27,7 +27,28 @@ const findById = async (id: number) => {
 const addUser = async (data: CreateUserData) => {
   return db.user.create({
     data,
-    select: { email: true },
+    select: { id: true, login: true },
+  });
+};
+
+const findByAnyEmailHash = async (emailHashes: string[]) => {
+  if (emailHashes.length === 0) return null;
+
+  return db.user.findFirst({
+    where: { emailHash: { in: emailHashes } },
+    select: { id: true, emailHash: true, emailPepperVersion: true },
+  });
+};
+
+const upgradeEmailHash = async (
+  id: number,
+  emailHash: string,
+  emailPepperVersion: number,
+) => {
+  return db.user.update({
+    where: { id },
+    data: { emailHash, emailPepperVersion, isEmailVerified: true },
+    select: { id: true, emailPepperVersion: true },
   });
 };
 
@@ -54,4 +75,12 @@ const deleteById = async (id: number) => {
   });
 };
 
-export { findById, findMany, addUser, updateExtraInfo, deleteById };
+export {
+  findById,
+  findMany,
+  addUser,
+  findByAnyEmailHash,
+  upgradeEmailHash,
+  updateExtraInfo,
+  deleteById,
+};

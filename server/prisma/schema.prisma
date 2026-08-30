@@ -21,17 +21,19 @@ enum Role {
 }
 
 model User {
-  id               Int      @id @default(autoincrement())
-  login            String   @unique @db.VarChar(64)
-  email            String   @unique @db.VarChar(254)
-  passwordHash     String   @map("password_hash")
-  extraInfo        String?  @map("extra_info") @db.VarChar(1000)
-  role             Role     @default(USER)
-  lastIp           String?  @map("last_ip") @db.Inet
-  isBlocked        Boolean  @default(false) @map("is_blocked")
-  isEmailVerified  Boolean  @default(false) @map("is_email_verified")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  id                 Int      @id @default(autoincrement())
+  login              String   @unique @db.VarChar(64)
+  emailHash          String   @unique @map("email_hash") @db.VarChar(64)
+  emailPepperVersion Int      @map("email_pepper_version")
+  passwordHash       String   @map("password_hash")
+  extraInfo          String?  @map("extra_info") @db.VarChar(1000)
+  role               Role     @default(USER)
+  lastIp             String?  @map("last_ip") @db.Inet
+  isBlocked          Boolean  @default(false) @map("is_blocked")
+  isEmailVerified    Boolean  @default(false) @map("is_email_verified")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
+  @@index([emailPepperVersion])
   @@map("ws_user")
 }
