@@ -4,6 +4,8 @@ import { expect } from 'vitest';
 import type { Express } from 'express';
 
 import buildApp from '../src/app.js';
+import { db } from '../src/prisma/db.js';
+import { Role } from '../src/generated/prisma/client.js';
 
 export const app: Express = buildApp();
 
@@ -35,23 +37,70 @@ export async function registerUser(
   expect(res.status).toBe(201);
   expect(res.body).toEqual({
     message: 'Registration successful',
+    token: expect.any(String),
   });
 
   return payload;
 }
 
-export async function findUserByLogin(login: string) {
+export async function loginUser(
+  login: string,
+  password: string,
+): Promise<string> {
   const res = await request(app)
-    .get('/api/users')
-    .query({ limit: 100, offset: 0 });
-  expect(res.status).toBe(200);
-  expect(Array.isArray(res.body)).toBe(true);
+    .post('/api/auth/login')
+    .send({ login, password });
 
-  const user = (res.body as Array<{ login: string }>).find(
-    (item) => item.login === login,
-  );
-  expect(user).toBeDefined();
-  return user as PublicUser;
+  expect(res.status).toBe(200);
+  expect(res.body.token).toEqual(expect.any(String));
+  return res.body.token as string;
+}
+
+export async function registerAndLogin(
+  overrides: Partial<RegisterBody> = {},
+): Promise<RegisterBody & { token: string; id: number }> {
+  const payload = await registerUser(overrides);
+  const token = await loginUser(payload.login, payload.password);
+  const user = await findUserByLogin(payload.login);
+  return { ...payload, token, id: user.id };
+}
+
+export async function registerAdmin(): Promise<
+  RegisterBody & { token: string; id: number }
+> {
+  const payload = await registerUser();
+  await db.user.update({
+    where: { login: payload.login },
+    data: { role: Role.ADMIN },
+  });
+  const token = await loginUser(payload.login, payload.password);
+  const user = await findUserByLogin(payload.login);
+  return { ...payload, token, id: user.id };
+}
+
+export function bearer(token: string) {
+  return { Authorization: `Bearer ${token}` };
+}
+
+export async function findUserByLogin(login: string) {
+  const user = await db.user.findUnique({
+    where: { login },
+    select: {
+      id: true,
+      login: true,
+      extraInfo: true,
+      role: true,
+      isBlocked: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+  expect(user).not.toBeNull();
+  return {
+    ...user!,
+    createdAt: user!.createdAt.toISOString(),
+    updatedAt: user!.updatedAt.toISOString(),
+  } as PublicUser;
 }
 
 export type PublicUser = {

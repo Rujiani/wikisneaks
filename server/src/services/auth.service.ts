@@ -1,8 +1,9 @@
-import argon2, { argon2id } from 'argon2';
 import * as userRepo from '../repositories/user.repository.js';
 import createHttpError from 'http-errors';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
 import { hashEmail, hashEmailAllVersions } from '../utils/hash.email.js';
+import { hashPassword, verifyPassword } from '../utils/hash.password.js';
+import { generateToken } from '../utils/json.token.js';
 
 /**
  * Register a user with login + password only.
@@ -10,13 +11,15 @@ import { hashEmail, hashEmailAllVersions } from '../utils/hash.email.js';
  *
  * @param login - Unique login.
  * @param password - Plaintext password (hashed with argon2id before insert).
+ * @returns JWT token.
  * @throws HttpError 409 if login already exists.
  */
 const register = async (login: string, password: string) => {
-  const passwordHash = await argon2.hash(password, { type: argon2id });
+  const passwordHash = await hashPassword(password);
 
   try {
-    await userRepo.addUser({ login, passwordHash });
+    const user = await userRepo.addUser({ login, passwordHash });
+    return generateToken(user.id, user.login, user.role);
   } catch (err) {
     if (err instanceof PrismaClientKnownRequestError && err.code === 'P2002') {
       throw createHttpError(409, 'Login is already registered');
@@ -53,4 +56,22 @@ const reconfirmEmail = async (userId: number, email: string) => {
   return userRepo.upgradeEmailHash(userId, next.hash, next.pepperVersion);
 };
 
-export { register, reconfirmEmail };
+const login = async (login: string, password: string) => {
+  const user = await userRepo.findByLoginWithHash(login);
+  if (!user) {
+    throw createHttpError(401, 'Invalid login or password');
+  }
+
+  const isPasswordValid = await verifyPassword(user.passwordHash, password);
+  if (!isPasswordValid) {
+    throw createHttpError(401, 'Invalid login or password');
+  }
+
+  if (user.isBlocked) {
+    throw createHttpError(403, 'Account is blocked');
+  }
+
+  return generateToken(user.id, user.login, user.role);
+};
+
+export { register, reconfirmEmail, login };

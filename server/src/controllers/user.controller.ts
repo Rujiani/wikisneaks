@@ -31,4 +31,31 @@ const deleteUser = async (req: Request, res: Response) => {
   res.sendStatus(204);
 };
 
-export { getUser, getUsersList, updateUser, deleteUser };
+const blockUser = async (req: Request, res: Response) => {
+  const params = await userParamsSchema.parseAsync(req.params);
+  const user = await userService.setBlocked(
+    req.user!.userId,
+    params.userId,
+    true,
+  );
+  res.status(200).json({ user });
+};
+
+const unblockUser = async (req: Request, res: Response) => {
+  const params = await userParamsSchema.parseAsync(req.params);
+  const user = await userService.setBlocked(
+    req.user!.userId,
+    params.userId,
+    false,
+  );
+  res.status(200).json({ user });
+};
+
+export {
+  getUser,
+  getUsersList,
+  updateUser,
+  deleteUser,
+  blockUser,
+  unblockUser,
+};

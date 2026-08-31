@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import * as z from 'zod'
 
 import { userParamsSchema } from '../src/schemas/user.schemas.js'
-import { registerBodySchema } from '../src/schemas/auth.schemas.js'
+import { registerBodySchema, tokenPayloadSchema } from '../src/schemas/auth.schemas.js'
 
 function expectSuccess(schema: z.ZodType, input: unknown, data: unknown) {
     expect(schema.safeParse(input)).toMatchObject({ success: true, data })
@@ -140,5 +140,30 @@ describe('RegisterBodySchema', () => {
                 )
             }
         })
+    })
+})
+
+describe('tokenPayloadSchema', () => {
+    const valid = { userId: 1, login: 'validuser', role: 'USER' as const }
+
+    it('accepts a signed-style payload', () => {
+        expectSuccess(tokenPayloadSchema, valid, valid)
+    })
+
+    it('keeps userId/login/role when jwt claims are present', () => {
+        expectSuccess(
+            tokenPayloadSchema,
+            { ...valid, iat: 1, exp: 2 },
+            valid,
+        )
+    })
+
+    it.each([
+        [{ ...valid, userId: '1' }, 'userId', 'invalid_type'],
+        [{ ...valid, userId: 0 }, 'userId', 'too_small'],
+        [{ ...valid, role: 'GOD' }, 'role', 'invalid_value'],
+        [{ login: 'validuser', role: 'USER' }, 'userId', 'invalid_type'],
+    ] as const)('rejects %j', (input, path, code) => {
+        expectFailure(tokenPayloadSchema, input, [path], code)
     })
 })

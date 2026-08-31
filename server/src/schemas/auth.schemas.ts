@@ -1,4 +1,5 @@
 import * as z from 'zod';
+import { Role } from '../generated/prisma/client.js';
 
 const registerBodySchema = z.object({
   login: z
@@ -28,4 +29,26 @@ const registerBodySchema = z.object({
 
 type RegisterBody = z.infer<typeof registerBodySchema>;
 
-export { registerBodySchema, type RegisterBody };
+const loginBodySchema = z.object({
+  login: z.string().trim(),
+  password: z.string(),
+});
+
+type LoginBody = z.infer<typeof loginBodySchema>;
+
+const tokenPayloadSchema = z.object({
+  userId: z.number().int().positive(),
+  login: z.string().min(1),
+  role: z.enum([Role.USER, Role.ADMIN, Role.MODERATOR]),
+});
+
+type TokenPayload = z.infer<typeof tokenPayloadSchema>;
+
+export {
+  registerBodySchema,
+  type RegisterBody,
+  loginBodySchema,
+  type LoginBody,
+  tokenPayloadSchema,
+  type TokenPayload,
+};

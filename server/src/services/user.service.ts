@@ -1,14 +1,10 @@
-import createHttpError from 'http-errors';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
 import * as repo from '../repositories/user.repository.js';
-
-const _notFound = (errorMsg: string): never => {
-  throw createHttpError(404, errorMsg);
-};
+import { forbidden, notFound } from '../utils/http.errors.js';
 
 const getUser = async (id: number) => {
   const user = await repo.findById(id);
-  if (!user) _notFound('User not found');
+  if (!user) notFound('User not found');
   return user;
 };
 
@@ -21,7 +17,7 @@ const updateExtraInfo = async (id: number, extraInfo: string) => {
     return await repo.updateExtraInfo(id, extraInfo);
   } catch (err) {
     if (err instanceof PrismaClientKnownRequestError && err.code === 'P2025') {
-      _notFound('User not found');
+      notFound('User not found');
     }
     throw err;
   }
@@ -32,10 +28,29 @@ const deleteUser = async (id: number) => {
     await repo.deleteById(id);
   } catch (err) {
     if (err instanceof PrismaClientKnownRequestError && err.code === 'P2025') {
-      _notFound('User not found');
+      notFound('User not found');
     }
     throw err;
   }
 };
 
-export { getUser, getUsersList, updateExtraInfo, deleteUser };
+const setBlocked = async (
+  actorId: number,
+  targetId: number,
+  isBlocked: boolean,
+) => {
+  if (actorId === targetId) {
+    forbidden('Cannot block or unblock yourself');
+  }
+
+  try {
+    return await repo.setBlocked(targetId, isBlocked);
+  } catch (err) {
+    if (err instanceof PrismaClientKnownRequestError && err.code === 'P2025') {
+      notFound('User not found');
+    }
+    throw err;
+  }
+};
+
+export { getUser, getUsersList, updateExtraInfo, deleteUser, setBlocked };

@@ -28,7 +28,7 @@ const findById = async (id: number) => {
 const addUser = async (data: CreateUserData) => {
   return db.user.create({
     data,
-    select: { id: true, login: true },
+    select: USER_PUBLIC_SELECT,
   });
 };
 
@@ -84,6 +84,32 @@ const deleteById = async (id: number) => {
   });
 };
 
+const setBlocked = async (id: number, isBlocked: boolean) => {
+  return db.user.update({
+    where: { id },
+    data: { isBlocked },
+    select: USER_PUBLIC_SELECT,
+  });
+};
+
+/** Login lookup: public fields plus password hash. Do not return this from the API. */
+const findByLoginWithHash = async (login: string) => {
+  return db.user.findUnique({
+    where: { login },
+    select: {
+      ...USER_PUBLIC_SELECT,
+      passwordHash: true,
+    },
+  });
+};
+
+const findByLogin = async (login: string) => {
+  return db.user.findUnique({
+    where: { login },
+    select: USER_PUBLIC_SELECT,
+  });
+};
+
 export {
   findById,
   findMany,
@@ -92,4 +118,7 @@ export {
   upgradeEmailHash,
   updateExtraInfo,
   deleteById,
+  setBlocked,
+  findByLoginWithHash,
+  findByLogin,
 };
