@@ -48,22 +48,22 @@ Email fingerprints: **[server/docs/email-hashing.md](server/docs/email-hashing.m
 
 ### Next
 
-- **Wiki domain (articles).** Auth/users are the platform; the product is still missing. Next slice: `Article` (title, slug, body, author → user, timestamps), CRUD under `/api/articles`, who can create/edit (owner / `MODERATOR` / `ADMIN`), list + get by slug. Keep it boring until that loop works, then drafts/revisions. Wiki **UI** waits on proxy/CORS (Soon) and web auth (Later).
+- **Wiki entries** — `Entry` (text + attachments: docs/images), `/api/entries` CRUD, slug, author/roles.
 
 ### Soon
 
-- **Session cap.** Env `MAX_REFRESH_SESSIONS` (e.g. `5`). Until then, every login keeps a new refresh row on purpose (multi-device, no cap). On **login**: insert the new refresh row, then if that user has more than N rows, delete the oldest (`ORDER BY created_at ASC`). **Register** usually has 1 row — the cap does not fire. Optional: `DELETE /api/auth/sessions` («log out everywhere») = `deleteMany` by `userId` except the current `jti`.
-- **Change password.** `POST /api/auth/change-password` `{ currentPassword, newPassword }`. Revoke all refresh rows, or all except the current `jti`. Access JWT lives until `exp` (same as logout).
-- **Rate limit** `/login` and `/register` (and a softer cap on `/refresh`). In-memory per process is enough. Without this, auth looks “done” and brute force is wide open.
-- **Seed.** One `ADMIN` + one `USER` with known passwords from `.env.example` (not prod secrets). Manual checklist after migrate is painful without it.
-- **Bind email over HTTP.** `reconfirmEmail` exists only in `auth.service`. Add a route, **self** only (owner of `:userId` / the access cookie). See [server/docs/email-hashing.md](server/docs/email-hashing.md).
-- **CORS or Vite proxy for** `web/`**.** Pick **one** and write it down: proxy `/api` to `:3000` (same site → `SameSite=strict` works), **or** relax cookies (`SameSite=none` + `Secure`) and enable CORS with credentials. Cross-origin SPA on `:5173` is dead until then.
+- **Session cap** — `MAX_REFRESH_SESSIONS`; drop oldest on login; optional logout-everywhere.
+- **Change password** — `POST /api/auth/change-password`; revoke refresh (all or except current).
+- **Rate limit** — `/login`, `/register`, `/refresh`.
+- **Seed** — one ADMIN + one USER from `.env.example`.
+- **Bind email HTTP** — `reconfirmEmail`, self only.
+- **CORS or Vite proxy** — cookies from `web/` to the API.
 
 ### Later
 
-- **Password reset by email.** Only after HTTP bind email — otherwise there is nowhere to send the mail.
-- **Web auth UI.** After proxy/CORS.
-- **Reuse-detection / token family.** If an old refresh `jti` is used after rotation (and outside the 3s cache), treat it as theft: revoke the whole family / all sessions for that user, not only `Refresh token not found`.
-- **Redis / shared refresh lock.** The in-memory LRU is per process. More than one API instance can rotate the same `jti` twice. A shared lock (or sticky sessions) is the fix.
-- **Change role over HTTP.** Roles are DB-only today. An admin route (not self) to set `USER` / `MODERATOR` / `ADMIN`. Remember: the access JWT still has the old `role` until refresh.
-- **Access token blacklist** on logout/block. Skip while access lifetime is ~3 minutes. Same as logout today: access lives until `exp`.
+- **Password reset** — after email bind.
+- **Web auth UI** — after proxy/CORS.
+- **Reuse-detection / token family** — replayed refresh revokes the family.
+- **Redis refresh lock** — shared lock across instances.
+- **Change role HTTP** — admin route; JWT `role` updates on refresh.
+- **Access blacklist** — logout/block vs ~3 min access TTL.
