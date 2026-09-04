@@ -15,7 +15,7 @@ const getUser = async (req: Request, res: Response) => {
 const getUsersList = async (req: Request, res: Response) => {
   const query = await userListSchema.parseAsync(req.query);
   const users = await userService.getUsersList(query.limit, query.offset);
-  res.json(users);
+  res.json({ users });
 };
 
 const updateUser = async (req: Request, res: Response) => {

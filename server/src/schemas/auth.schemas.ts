@@ -1,5 +1,6 @@
 import * as z from 'zod';
 import { Role } from '../generated/prisma/client.js';
+import { TokenType } from '../utils/token.type.js';
 
 const registerBodySchema = z.object({
   login: z
@@ -36,19 +37,30 @@ const loginBodySchema = z.object({
 
 type LoginBody = z.infer<typeof loginBodySchema>;
 
-const tokenPayloadSchema = z.object({
+const accessTokenPayloadSchema = z.object({
   userId: z.number().int().positive(),
   login: z.string().min(1),
   role: z.enum([Role.USER, Role.ADMIN, Role.MODERATOR]),
+  type: z.literal(TokenType.ACCESS),
 });
 
-type TokenPayload = z.infer<typeof tokenPayloadSchema>;
+type AccessTokenPayload = z.infer<typeof accessTokenPayloadSchema>;
+
+const refreshTokenPayloadSchema = z.object({
+  userId: z.number().int().positive(),
+  type: z.literal(TokenType.REFRESH),
+  jti: z.uuid(),
+});
+
+type RefreshTokenPayload = z.infer<typeof refreshTokenPayloadSchema>;
 
 export {
   registerBodySchema,
   type RegisterBody,
   loginBodySchema,
   type LoginBody,
-  tokenPayloadSchema,
-  type TokenPayload,
+  accessTokenPayloadSchema,
+  type AccessTokenPayload,
+  refreshTokenPayloadSchema,
+  type RefreshTokenPayload,
 };

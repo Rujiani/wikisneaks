@@ -2,6 +2,7 @@ import { faker } from '@faker-js/faker';
 import request from 'supertest';
 import { expect } from 'vitest';
 import type { Express } from 'express';
+import type { TestAgent } from 'supertest';
 
 import buildApp from '../src/app.js';
 import { db } from '../src/prisma/db.js';
@@ -28,6 +29,17 @@ export function buildRegisterBody(
   };
 }
 
+/**
+ * Returns a supertest agent with cookies from a successful login.
+ * The agent's cookie jar holds the httpOnly accessToken + refreshToken.
+ */
+export async function createAgent(login: string, password: string): Promise<TestAgent> {
+  const agent = request.agent(app);
+  const res = await agent.post('/api/auth/login').send({ login, password });
+  expect(res.status).toBe(200);
+  return agent;
+}
+
 export async function registerUser(
   overrides: Partial<RegisterBody> = {},
 ): Promise<RegisterBody> {
@@ -35,51 +47,38 @@ export async function registerUser(
   const res = await request(app).post('/api/auth/register').send(payload);
 
   expect(res.status).toBe(201);
-  expect(res.body).toEqual({
-    message: 'Registration successful',
-    token: expect.any(String),
-  });
+  expect(res.body).toEqual({ message: 'Registration successful' });
 
   return payload;
 }
 
-export async function loginUser(
-  login: string,
-  password: string,
-): Promise<string> {
-  const res = await request(app)
-    .post('/api/auth/login')
-    .send({ login, password });
-
-  expect(res.status).toBe(200);
-  expect(res.body.token).toEqual(expect.any(String));
-  return res.body.token as string;
-}
-
+/** Register via an agent so the cookie jar already holds the session. */
 export async function registerAndLogin(
   overrides: Partial<RegisterBody> = {},
-): Promise<RegisterBody & { token: string; id: number }> {
-  const payload = await registerUser(overrides);
-  const token = await loginUser(payload.login, payload.password);
+): Promise<RegisterBody & { agent: TestAgent; id: number }> {
+  const payload = buildRegisterBody(overrides);
+  const agent = request.agent(app);
+  const res = await agent.post('/api/auth/register').send(payload);
+
+  expect(res.status).toBe(201);
+  expect(res.body).toEqual({ message: 'Registration successful' });
+
   const user = await findUserByLogin(payload.login);
-  return { ...payload, token, id: user.id };
+  return { ...payload, agent, id: user.id };
 }
 
 export async function registerAdmin(): Promise<
-  RegisterBody & { token: string; id: number }
+  RegisterBody & { agent: TestAgent; id: number }
 > {
-  const payload = await registerUser();
+  const session = await registerAndLogin();
   await db.user.update({
-    where: { login: payload.login },
+    where: { login: session.login },
     data: { role: Role.ADMIN },
   });
-  const token = await loginUser(payload.login, payload.password);
-  const user = await findUserByLogin(payload.login);
-  return { ...payload, token, id: user.id };
-}
-
-export function bearer(token: string) {
-  return { Authorization: `Bearer ${token}` };
+  // Register JWT still has USER; refresh re-signs with the current DB role.
+  const refresh = await session.agent.post('/api/auth/refresh');
+  expect(refresh.status).toBe(200);
+  return session;
 }
 
 export async function findUserByLogin(login: string) {
@@ -112,6 +111,27 @@ export type PublicUser = {
   createdAt: string;
   updatedAt: string;
 };
+
+export function setCookies(res: { headers: Record<string, unknown> }): string[] {
+  const raw = res.headers['set-cookie'];
+  if (Array.isArray(raw)) return raw as string[];
+  if (typeof raw === 'string') return [raw];
+  return [];
+}
+
+export function cookieLine(cookies: string[], name: string): string {
+  const line = cookies.find((cookie) => cookie.startsWith(`${name}=`));
+  expect(line).toBeDefined();
+  return line!;
+}
+
+export function cookieValue(cookies: string[], name: string): string {
+  return cookieLine(cookies, name).slice(name.length + 1).split(';')[0]!;
+}
+
+export function cookieHeader(cookies: string[]): string {
+  return cookies.map((cookie) => cookie.split(';')[0]).join('; ');
+}
 
 export function expectPublicUser(
   user: unknown,

@@ -1,20 +1,20 @@
 import type { NextFunction, Request, Response } from 'express';
-import { getToken, verifyToken } from '../utils/json.token.js';
+import { verifyAccessToken } from '../utils/json.token.js';
 import { unauthorized } from '../utils/http.errors.js';
 
 /**
- * Verifies the Bearer JWT and sets `req.user`. Call before role / owner guards.
+ * Reads `accessToken` from cookies, verifies it, and sets `req.user`.
+ * Missing cookie → 401; bad/expired JWT → `JsonWebTokenError` → 401 in the app error handler.
  */
-const authenticate = (req: Request, _res: Response, next: NextFunction) => {
-  const token = getToken(req.headers.authorization);
+const authenticate = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const token = req.cookies.accessToken;
   if (!token) return unauthorized();
 
-  try {
-    req.user = verifyToken(token);
-  } catch {
-    return unauthorized();
-  }
-
+  req.user = verifyAccessToken(token);
   next();
 };
 

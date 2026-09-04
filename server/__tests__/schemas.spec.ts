@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import * as z from 'zod'
 
 import { userParamsSchema } from '../src/schemas/user.schemas.js'
-import { registerBodySchema, tokenPayloadSchema } from '../src/schemas/auth.schemas.js'
+import { registerBodySchema, accessTokenPayloadSchema, refreshTokenPayloadSchema } from '../src/schemas/auth.schemas.js'
 
 function expectSuccess(schema: z.ZodType, input: unknown, data: unknown) {
     expect(schema.safeParse(input)).toMatchObject({ success: true, data })
@@ -143,16 +143,16 @@ describe('RegisterBodySchema', () => {
     })
 })
 
-describe('tokenPayloadSchema', () => {
-    const valid = { userId: 1, login: 'validuser', role: 'USER' as const }
+describe('accessTokenPayloadSchema', () => {
+    const valid = { userId: 1, login: 'validuser', role: 'USER' as const, type: 'access' as const }
 
     it('accepts a signed-style payload', () => {
-        expectSuccess(tokenPayloadSchema, valid, valid)
+        expectSuccess(accessTokenPayloadSchema, valid, valid)
     })
 
-    it('keeps userId/login/role when jwt claims are present', () => {
+    it('keeps userId/login/role/type when jwt claims are present', () => {
         expectSuccess(
-            tokenPayloadSchema,
+            accessTokenPayloadSchema,
             { ...valid, iat: 1, exp: 2 },
             valid,
         )
@@ -162,8 +162,39 @@ describe('tokenPayloadSchema', () => {
         [{ ...valid, userId: '1' }, 'userId', 'invalid_type'],
         [{ ...valid, userId: 0 }, 'userId', 'too_small'],
         [{ ...valid, role: 'GOD' }, 'role', 'invalid_value'],
-        [{ login: 'validuser', role: 'USER' }, 'userId', 'invalid_type'],
+        [{ login: 'validuser', role: 'USER', type: 'access' }, 'userId', 'invalid_type'],
+        [{ ...valid, type: 'refresh' }, 'type', 'invalid_value'],
     ] as const)('rejects %j', (input, path, code) => {
-        expectFailure(tokenPayloadSchema, input, [path], code)
+        expectFailure(accessTokenPayloadSchema, input, [path], code)
+    })
+})
+
+describe('refreshTokenPayloadSchema', () => {
+    const valid = {
+        userId: 1,
+        type: 'refresh' as const,
+        jti: '550e8400-e29b-41d4-a716-446655440000',
+    }
+
+    it('accepts a signed-style payload', () => {
+        expectSuccess(refreshTokenPayloadSchema, valid, valid)
+    })
+
+    it('keeps userId/type/jti when jwt claims are present', () => {
+        expectSuccess(
+            refreshTokenPayloadSchema,
+            { ...valid, iat: 1, exp: 2 },
+            valid,
+        )
+    })
+
+    it.each([
+        [{ ...valid, userId: '1' }, 'userId', 'invalid_type'],
+        [{ ...valid, userId: 0 }, 'userId', 'too_small'],
+        [{ ...valid, type: 'access' }, 'type', 'invalid_value'],
+        [{ userId: 1, type: 'refresh' }, 'jti', 'invalid_type'],
+        [{ ...valid, jti: 'not-a-uuid' }, 'jti', 'invalid_format'],
+    ] as const)('rejects %j', (input, path, code) => {
+        expectFailure(refreshTokenPayloadSchema, input, [path], code)
     })
 })

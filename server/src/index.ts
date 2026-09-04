@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import buildApp from './app.js';
 import { connectDB, closeDB } from './prisma/db.js';
+import { deleteExpiredRefreshTokens } from './repositories/token.repository.js';
+import cron from 'node-cron';
 
 const startapp = async () => {
   const PORT = process.env.PORT ?? 3000;
@@ -9,6 +11,11 @@ const startapp = async () => {
 
   const server = app.listen(PORT, () => {
     console.log(`app Listening at http://localhost:${PORT}`);
+  });
+
+  // Drop expired refresh rows once a day (server local midnight).
+  cron.schedule('0 0 * * *', async () => {
+    await deleteExpiredRefreshTokens();
   });
 
   const shutdown = (signal: string): void => {

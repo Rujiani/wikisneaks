@@ -23,7 +23,7 @@ enum Role {
 model User {
   id                 Int      @id @default(autoincrement())
   login              String   @unique @db.VarChar(64)
-  emailHash          String?  @unique @map("email_hash") @db.VarChar(64)
+  emailHash          String?  @unique @map("email_hash") @db.Char(64)
   emailPepperVersion Int?     @map("email_pepper_version")
   passwordHash       String   @map("password_hash")
   extraInfo          String?  @map("extra_info") @db.VarChar(1000)
@@ -34,6 +34,24 @@ model User {
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
+  tokens             Token[]
+
   @@index([emailPepperVersion])
   @@map("ws_user")
+}
+
+/// Refresh session. `jti` matches the refresh JWT. Cascades on user delete.
+model Token {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jti       String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  expiresAt DateTime @map("expires_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+
+  @@map("ws_refresh_token")
 }

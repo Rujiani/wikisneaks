@@ -9,6 +9,7 @@ import { ZodError } from 'zod';
 import { isHttpError } from 'http-errors';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
+import jwt from 'jsonwebtoken';
 
 const buildApp = (): Express => {
   const app = express();
@@ -32,6 +33,10 @@ const buildApp = (): Express => {
       return res
         .status(400)
         .json({ message: 'Validation error', issues: err.issues });
+    }
+
+    if (err instanceof jwt.JsonWebTokenError) {
+      return res.status(401).json({ message: 'Unauthorized' });
     }
 
     if (isHttpError(err)) {

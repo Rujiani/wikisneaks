@@ -85,6 +85,12 @@ const deleteById = async (id: number) => {
 };
 
 const setBlocked = async (id: number, isBlocked: boolean) => {
+  if (isBlocked) {
+    await db.token.deleteMany({
+      where: { userId: id },
+    });
+  }
+
   return db.user.update({
     where: { id },
     data: { isBlocked },

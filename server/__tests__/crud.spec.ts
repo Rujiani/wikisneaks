@@ -4,7 +4,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { closeDB, connectDB, db } from '../src/prisma/db.js';
 import {
   app,
-  bearer,
   buildRegisterBody,
   expectPublicUser,
   findUserByLogin,
@@ -33,7 +32,7 @@ describe('User CRUD', () => {
   });
 
   beforeEach(async () => {
-    await db.$executeRaw`TRUNCATE TABLE "ws_user" RESTART IDENTITY CASCADE`;
+    await db.$executeRaw`TRUNCATE TABLE "ws_refresh_token", "ws_user" RESTART IDENTITY CASCADE`;
   });
 
   describe('POST /api/auth/register', () => {
@@ -104,18 +103,32 @@ describe('User CRUD', () => {
         message: 'Login is already registered',
       });
     });
+
+    it('sets httpOnly access and refresh cookies', async () => {
+      const payload = buildRegisterBody();
+      const res = await request(app).post('/api/auth/register').send(payload);
+
+      expect(res.status).toBe(201);
+      const cookies = res.headers['set-cookie'] as string[];
+      expect(cookies).toBeDefined();
+      expect(cookies.some((c: string) => c.startsWith('accessToken='))).toBe(true);
+      expect(cookies.some((c: string) => c.startsWith('refreshToken='))).toBe(true);
+    });
   });
 
   describe('POST /api/auth/login', () => {
-    it('returns a token for valid credentials', async () => {
+    it('returns 200 and sets cookies for valid credentials', async () => {
       const payload = await registerUser();
       const res = await request(app).post('/api/auth/login').send(payload);
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ token: expect.any(String) });
+      expect(res.body).toEqual({ message: 'Login successful' });
+      const cookies = res.headers['set-cookie'] as string[];
+      expect(cookies.some((c: string) => c.startsWith('accessToken='))).toBe(true);
+      expect(cookies.some((c: string) => c.startsWith('refreshToken='))).toBe(true);
     });
 
-    it('returns 401 for an unknown login without hashing a password', async () => {
+    it('returns 401 for an unknown login', async () => {
       const res = await request(app).post('/api/auth/login').send({
         login: 'nobodyhere',
         password: 'Password1!ab',
@@ -151,27 +164,15 @@ describe('User CRUD', () => {
   });
 
   describe('GET /api/users', () => {
-    it('returns 401 without a token', async () => {
+    it('returns 401 without a cookie', async () => {
       const res = await request(app).get('/api/users');
-      expect(res.status).toBe(401);
-      expect(res.body).toEqual({ message: 'Unauthorized' });
-    });
-
-    it('returns 401 when the Authorization scheme is not Bearer', async () => {
-      const session = await registerAndLogin();
-      const res = await request(app)
-        .get('/api/users')
-        .set({ Authorization: `Basic ${session.token}` });
-
       expect(res.status).toBe(401);
       expect(res.body).toEqual({ message: 'Unauthorized' });
     });
 
     it('returns 403 for a regular user', async () => {
       const session = await registerAndLogin();
-      const res = await request(app)
-        .get('/api/users')
-        .set(bearer(session.token));
+      const res = await session.agent.get('/api/users');
 
       expect(res.status).toBe(403);
       expect(res.body).toEqual({ message: 'Forbidden' });
@@ -179,11 +180,11 @@ describe('User CRUD', () => {
 
     it('returns only the admin when no other users exist', async () => {
       const admin = await registerAdmin();
-      const res = await request(app).get('/api/users').set(bearer(admin.token));
+      const res = await admin.agent.get('/api/users');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-      expectPublicUser(res.body[0], { login: admin.login, role: 'ADMIN' });
+      expect(res.body.users).toHaveLength(1);
+      expectPublicUser(res.body.users[0], { login: admin.login, role: 'ADMIN' });
     });
 
     it('returns created users newest first', async () => {
@@ -191,13 +192,13 @@ describe('User CRUD', () => {
       const first = await registerUser();
       const second = await registerUser();
 
-      const res = await request(app).get('/api/users').set(bearer(admin.token));
+      const res = await admin.agent.get('/api/users');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(3);
-      expectPublicUser(res.body[0], { login: second.login });
-      expectPublicUser(res.body[1], { login: first.login });
-      expectPublicUser(res.body[2], { login: admin.login, role: 'ADMIN' });
+      expect(res.body.users).toHaveLength(3);
+      expectPublicUser(res.body.users[0], { login: second.login });
+      expectPublicUser(res.body.users[1], { login: first.login });
+      expectPublicUser(res.body.users[2], { login: admin.login, role: 'ADMIN' });
     });
 
     it('paginates with limit and offset', async () => {
@@ -208,39 +209,36 @@ describe('User CRUD', () => {
         await registerUser(),
       ];
 
-      const page = await request(app)
+      const page = await admin.agent
         .get('/api/users')
-        .set(bearer(admin.token))
         .query({ limit: 2, offset: 0 });
       expect(page.status).toBe(200);
-      expect(page.body).toHaveLength(2);
-      expect(page.body[0].login).toBe(users[2]?.login);
-      expect(page.body[1].login).toBe(users[1]?.login);
+      expect(page.body.users).toHaveLength(2);
+      expect(page.body.users[0].login).toBe(users[2]?.login);
+      expect(page.body.users[1].login).toBe(users[1]?.login);
 
-      const next = await request(app)
+      const next = await admin.agent
         .get('/api/users')
-        .set(bearer(admin.token))
         .query({ limit: 2, offset: 2 });
       expect(next.status).toBe(200);
-      expect(next.body).toHaveLength(2);
-      expect(next.body[0].login).toBe(users[0]?.login);
-      expect(next.body[1].login).toBe(admin.login);
+      expect(next.body.users).toHaveLength(2);
+      expect(next.body.users[0].login).toBe(users[0]?.login);
+      expect(next.body.users[1].login).toBe(admin.login);
     });
 
     it('uses default limit and offset when query params are omitted', async () => {
       const admin = await registerAdmin();
       await registerUser();
-      const res = await request(app).get('/api/users').set(bearer(admin.token));
+      const res = await admin.agent.get('/api/users');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(2);
+      expect(res.body.users).toHaveLength(2);
     });
 
     it('returns 400 for invalid pagination query', async () => {
       const admin = await registerAdmin();
-      const res = await request(app)
+      const res = await admin.agent
         .get('/api/users')
-        .set(bearer(admin.token))
         .query({ limit: 0, offset: -1 });
 
       expect(res.status).toBe(400);
@@ -252,9 +250,7 @@ describe('User CRUD', () => {
     it('returns a single user to the owner', async () => {
       const session = await registerAndLogin();
 
-      const res = await request(app)
-        .get(`/api/users/${session.id}`)
-        .set(bearer(session.token));
+      const res = await session.agent.get(`/api/users/${session.id}`);
 
       expect(res.status).toBe(200);
       expectPublicUser(res.body.user, {
@@ -267,9 +263,7 @@ describe('User CRUD', () => {
       const owner = await registerAndLogin();
       const other = await registerAndLogin();
 
-      const res = await request(app)
-        .get(`/api/users/${owner.id}`)
-        .set(bearer(other.token));
+      const res = await other.agent.get(`/api/users/${owner.id}`);
 
       expect(res.status).toBe(403);
       expect(res.body).toEqual({ message: 'Forbidden' });
@@ -277,9 +271,7 @@ describe('User CRUD', () => {
 
     it('returns 404 when the user does not exist', async () => {
       const admin = await registerAdmin();
-      const res = await request(app)
-        .get('/api/users/999')
-        .set(bearer(admin.token));
+      const res = await admin.agent.get('/api/users/999');
 
       expect(res.status).toBe(404);
       expect(res.body).toEqual({ message: 'User not found' });
@@ -287,9 +279,7 @@ describe('User CRUD', () => {
 
     it('returns 400 when userId is invalid', async () => {
       const session = await registerAndLogin();
-      const res = await request(app)
-        .get('/api/users/not-a-number')
-        .set(bearer(session.token));
+      const res = await session.agent.get('/api/users/not-a-number');
 
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ message: 'Validation error' });
@@ -300,9 +290,8 @@ describe('User CRUD', () => {
     it('updates extraInfo and returns the public user', async () => {
       const session = await registerAndLogin();
 
-      const res = await request(app)
+      const res = await session.agent
         .patch(`/api/users/${session.id}`)
-        .set(bearer(session.token))
         .send({ extraInfo: '  likes sneaker drops  ' });
 
       expect(res.status).toBe(200);
@@ -315,9 +304,8 @@ describe('User CRUD', () => {
     it('ignores attempts to change fields other than extraInfo', async () => {
       const session = await registerAndLogin();
 
-      const res = await request(app)
+      const res = await session.agent
         .patch(`/api/users/${session.id}`)
-        .set(bearer(session.token))
         .send({
           extraInfo: 'bio',
           role: 'ADMIN',
@@ -339,9 +327,8 @@ describe('User CRUD', () => {
       const owner = await registerAndLogin();
       const other = await registerAndLogin();
 
-      const res = await request(app)
+      const res = await other.agent
         .patch(`/api/users/${owner.id}`)
-        .set(bearer(other.token))
         .send({ extraInfo: 'bio' });
 
       expect(res.status).toBe(403);
@@ -350,9 +337,8 @@ describe('User CRUD', () => {
 
     it('returns 404 when the user does not exist', async () => {
       const admin = await registerAdmin();
-      const res = await request(app)
+      const res = await admin.agent
         .patch('/api/users/999')
-        .set(bearer(admin.token))
         .send({ extraInfo: 'bio' });
 
       expect(res.status).toBe(404);
@@ -362,15 +348,13 @@ describe('User CRUD', () => {
     it('returns 400 when extraInfo is missing or too long', async () => {
       const session = await registerAndLogin();
 
-      const missing = await request(app)
+      const missing = await session.agent
         .patch(`/api/users/${session.id}`)
-        .set(bearer(session.token))
         .send({});
       expect(missing.status).toBe(400);
 
-      const tooLong = await request(app)
+      const tooLong = await session.agent
         .patch(`/api/users/${session.id}`)
-        .set(bearer(session.token))
         .send({ extraInfo: 'x'.repeat(1001) });
       expect(tooLong.status).toBe(400);
     });
@@ -381,30 +365,22 @@ describe('User CRUD', () => {
       const session = await registerAndLogin();
       const admin = await registerAdmin();
 
-      const res = await request(app)
-        .delete(`/api/users/${session.id}`)
-        .set(bearer(session.token));
+      const res = await session.agent.delete(`/api/users/${session.id}`);
 
       expect(res.status).toBe(204);
       expect(res.body).toEqual({});
 
-      const missing = await request(app)
-        .get(`/api/users/${session.id}`)
-        .set(bearer(admin.token));
+      const missing = await admin.agent.get(`/api/users/${session.id}`);
       expect(missing.status).toBe(404);
 
-      const list = await request(app)
-        .get('/api/users')
-        .set(bearer(admin.token));
-      expect(list.body).toHaveLength(1);
-      expect(list.body[0].login).toBe(admin.login);
+      const list = await admin.agent.get('/api/users');
+      expect(list.body.users).toHaveLength(1);
+      expect(list.body.users[0].login).toBe(admin.login);
     });
 
     it('returns 404 when the user does not exist', async () => {
       const admin = await registerAdmin();
-      const res = await request(app)
-        .delete('/api/users/999')
-        .set(bearer(admin.token));
+      const res = await admin.agent.delete('/api/users/999');
 
       expect(res.status).toBe(404);
       expect(res.body).toEqual({ message: 'User not found' });
@@ -412,9 +388,7 @@ describe('User CRUD', () => {
 
     it('returns 400 when userId is not a positive integer', async () => {
       const session = await registerAndLogin();
-      const res = await request(app)
-        .delete('/api/users/0')
-        .set(bearer(session.token));
+      const res = await session.agent.delete('/api/users/0');
 
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ message: 'Validation error' });
@@ -426,15 +400,14 @@ describe('User CRUD', () => {
       const admin = await registerAdmin();
       const target = await registerAndLogin();
 
-      const blocked = await request(app)
-        .post(`/api/users/${target.id}/block`)
-        .set(bearer(admin.token));
+      const blocked = await admin.agent.post(`/api/users/${target.id}/block`);
 
       expect(blocked.status).toBe(200);
       expectPublicUser(blocked.body.user, {
         login: target.login,
         isBlocked: true,
       });
+      expect(await db.token.count({ where: { userId: target.id } })).toBe(0);
 
       const denied = await request(app).post('/api/auth/login').send({
         login: target.login,
@@ -443,9 +416,7 @@ describe('User CRUD', () => {
       expect(denied.status).toBe(403);
       expect(denied.body).toEqual({ message: 'Account is blocked' });
 
-      const unblocked = await request(app)
-        .post(`/api/users/${target.id}/unblock`)
-        .set(bearer(admin.token));
+      const unblocked = await admin.agent.post(`/api/users/${target.id}/unblock`);
 
       expect(unblocked.status).toBe(200);
       expectPublicUser(unblocked.body.user, {
@@ -460,13 +431,33 @@ describe('User CRUD', () => {
       expect(ok.status).toBe(200);
     });
 
+    it('does not delete refresh tokens on unblock', async () => {
+      const admin = await registerAdmin();
+      const target = await registerAndLogin();
+
+      await admin.agent.post(`/api/users/${target.id}/block`);
+      expect(await db.token.count({ where: { userId: target.id } })).toBe(0);
+
+      await db.token.create({
+        data: {
+          userId: target.id,
+          jti: crypto.randomUUID(),
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+
+      const unblocked = await admin.agent.post(
+        `/api/users/${target.id}/unblock`,
+      );
+      expect(unblocked.status).toBe(200);
+      expect(await db.token.count({ where: { userId: target.id } })).toBe(1);
+    });
+
     it('returns 403 for a non-admin', async () => {
       const actor = await registerAndLogin();
       const target = await registerAndLogin();
 
-      const res = await request(app)
-        .post(`/api/users/${target.id}/block`)
-        .set(bearer(actor.token));
+      const res = await actor.agent.post(`/api/users/${target.id}/block`);
 
       expect(res.status).toBe(403);
       expect(res.body).toEqual({ message: 'Forbidden' });
@@ -474,9 +465,7 @@ describe('User CRUD', () => {
 
     it('returns 403 when an admin targets themselves', async () => {
       const admin = await registerAdmin();
-      const res = await request(app)
-        .post(`/api/users/${admin.id}/block`)
-        .set(bearer(admin.token));
+      const res = await admin.agent.post(`/api/users/${admin.id}/block`);
 
       expect(res.status).toBe(403);
       expect(res.body).toEqual({
@@ -486,9 +475,7 @@ describe('User CRUD', () => {
 
     it('returns 404 when the user does not exist', async () => {
       const admin = await registerAdmin();
-      const res = await request(app)
-        .post('/api/users/999/block')
-        .set(bearer(admin.token));
+      const res = await admin.agent.post('/api/users/999/block');
 
       expect(res.status).toBe(404);
       expect(res.body).toEqual({ message: 'User not found' });
